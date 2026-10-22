@@ -1,0 +1,27 @@
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.env
+
+# Model caches and generated files
+.cache/
+models/
+*.pt
+*.pth
+
+# Uploaded files and temporary data
+uploads/
+*.pdf
+
+# Frontend
+node_modules/
+dist/
+
+# Editors and operating system
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
