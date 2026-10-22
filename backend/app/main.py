@@ -3,6 +3,7 @@ from fastapi import FastAPI, File, HTTPException, UploadFile
 from pydantic import BaseModel
 
 from backend.app.pdf_processor import extract_pdf_text
+from backend.app.chunker import chunk_pages
 
 app = FastAPI(
     title="PDF Research and Evidence Finder",
@@ -18,10 +19,17 @@ class PageText(BaseModel):
     text: str
 
 
+class TextChunk(BaseModel):
+    page_number: int
+    chunk_id: int
+    text: str
+
+
 class PDFUploadResponse(BaseModel):
     filename: str
     page_count: int
     pages: list[PageText]
+    chunks: list[TextChunk]
 
 
 @app.get("/")
@@ -38,12 +46,14 @@ def health_check():
 
 @app.post("/upload", response_model=PDFUploadResponse)
 async def upload_pdf(file: UploadFile = File(...)):
+    # Validate the uploaded filename
     if not file.filename or not file.filename.lower().endswith(".pdf"):
         raise HTTPException(
             status_code=400,
             detail="Please upload a PDF file.",
         )
 
+    # Read the file, allowing us to detect files exceeding the limit
     pdf_bytes = await file.read(MAX_FILE_SIZE + 1)
 
     if len(pdf_bytes) > MAX_FILE_SIZE:
@@ -52,6 +62,7 @@ async def upload_pdf(file: UploadFile = File(...)):
             detail="The PDF exceeds the 10 MB upload limit.",
         )
 
+    # Extract text from each PDF page
     try:
         pages = extract_pdf_text(pdf_bytes)
     except Exception as exc:
@@ -60,14 +71,20 @@ async def upload_pdf(file: UploadFile = File(...)):
             detail="The uploaded file is not a readable PDF.",
         ) from exc
 
+    # Reject PDFs without extractable text
     if not pages:
         raise HTTPException(
             status_code=422,
             detail="No extractable text found. The PDF may be scanned.",
         )
 
+    # Split the extracted text into overlapping chunks
+    chunks = chunk_pages(pages)
+
+    # Return the extracted pages and generated chunks
     return {
         "filename": file.filename,
         "page_count": len(pages),
         "pages": pages,
+        "chunks": chunks,
     }
