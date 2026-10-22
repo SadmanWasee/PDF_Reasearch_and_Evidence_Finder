@@ -4,6 +4,8 @@ from pydantic import BaseModel
 
 from backend.app.pdf_processor import extract_pdf_text
 from backend.app.chunker import chunk_pages
+from backend.app.retrieval import bm25_search
+from backend.app.schemas import SearchRequest
 
 app = FastAPI(
     title="PDF Research and Evidence Finder",
@@ -87,4 +89,19 @@ async def upload_pdf(file: UploadFile = File(...)):
         "page_count": len(pages),
         "pages": pages,
         "chunks": chunks,
+    }
+
+
+@app.post("/search")
+def search_chunks(request: SearchRequest):
+    results = bm25_search(
+        chunks=request.chunks,
+        query=request.query,
+        top_k=request.top_k,
+    )
+
+    return {
+        "query": request.query,
+        "result_count": len(results),
+        "results": results,
     }
