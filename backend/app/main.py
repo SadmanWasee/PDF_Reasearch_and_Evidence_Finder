@@ -1,14 +1,13 @@
-from backend.app.retrieval import bm25_search
-from backend.app.semantic_search import semantic_search
-from backend.app.hybrid_search import hybrid_search
-from backend.app.schemas import SearchRequest
 
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from pydantic import BaseModel
 
 from backend.app.pdf_processor import extract_pdf_text
 from backend.app.chunker import chunk_pages
+from backend.app.document_store import save_document, get_document
 from backend.app.retrieval import bm25_search
+from backend.app.semantic_search import semantic_search
+from backend.app.hybrid_search import hybrid_search
 from backend.app.schemas import SearchRequest
 
 app = FastAPI(
@@ -32,8 +31,10 @@ class TextChunk(BaseModel):
 
 
 class PDFUploadResponse(BaseModel):
+    document_id: str
     filename: str
     page_count: int
+    chunk_count: int
     pages: list[PageText]
     chunks: list[TextChunk]
 
@@ -52,14 +53,12 @@ def health_check():
 
 @app.post("/upload", response_model=PDFUploadResponse)
 async def upload_pdf(file: UploadFile = File(...)):
-    # Validate the uploaded filename
     if not file.filename or not file.filename.lower().endswith(".pdf"):
         raise HTTPException(
             status_code=400,
             detail="Please upload a PDF file.",
         )
 
-    # Read the file, allowing us to detect files exceeding the limit
     pdf_bytes = await file.read(MAX_FILE_SIZE + 1)
 
     if len(pdf_bytes) > MAX_FILE_SIZE:
@@ -68,7 +67,6 @@ async def upload_pdf(file: UploadFile = File(...)):
             detail="The PDF exceeds the 10 MB upload limit.",
         )
 
-    # Extract text from each PDF page
     try:
         pages = extract_pdf_text(pdf_bytes)
     except Exception as exc:
@@ -77,34 +75,57 @@ async def upload_pdf(file: UploadFile = File(...)):
             detail="The uploaded file is not a readable PDF.",
         ) from exc
 
-    # Reject PDFs without extractable text
     if not pages:
         raise HTTPException(
             status_code=422,
             detail="No extractable text found. The PDF may be scanned.",
         )
 
-    # Split the extracted text into overlapping chunks
     chunks = chunk_pages(pages)
 
-    # Return the extracted pages and generated chunks
+    document_id = save_document(
+        filename=file.filename,
+        pages=pages,
+        chunks=chunks,
+    )
+
     return {
+        "document_id": document_id,
         "filename": file.filename,
         "page_count": len(pages),
+        "chunk_count": len(chunks),
         "pages": pages,
         "chunks": chunks,
     }
 
 
-@app.post("/search")
-def search_chunks(request: SearchRequest):
-    results = bm25_search(
-        chunks=request.chunks,
-        query=request.query,
-        top_k=request.top_k,
-    )
+def run_search(request: SearchRequest, method: str):
+    document = get_document(request.document_id)
+
+    if document is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Document not found. Please upload the PDF again.",
+        )
+
+    chunks = document["chunks"]
+
+    if method == "bm25":
+        results = bm25_search(chunks, request.query, request.top_k)
+    elif method == "semantic":
+        results = semantic_search(chunks, request.query, request.top_k)
+    else:
+        results = hybrid_search(chunks, request.query, request.top_k)
+
+    # Remove the BM25 score from hybrid results; RRF is the fused score.
+    if method == "hybrid":
+        for result in results:
+            result.pop("score", None)
 
     return {
+        "document_id": request.document_id,
+        "filename": document["filename"],
+        "method": method,
         "query": request.query,
         "result_count": len(results),
         "results": results,
@@ -113,47 +134,14 @@ def search_chunks(request: SearchRequest):
 
 @app.post("/search/bm25")
 def search_bm25(request: SearchRequest):
-    results = bm25_search(
-        chunks=request.chunks,
-        query=request.query,
-        top_k=request.top_k,
-    )
-
-    return {
-        "method": "bm25",
-        "query": request.query,
-        "result_count": len(results),
-        "results": results,
-    }
+    return run_search(request, "bm25")
 
 
 @app.post("/search/semantic")
 def search_semantic(request: SearchRequest):
-    results = semantic_search(
-        chunks=request.chunks,
-        query=request.query,
-        top_k=request.top_k,
-    )
-
-    return {
-        "method": "semantic",
-        "query": request.query,
-        "result_count": len(results),
-        "results": results,
-    }
+    return run_search(request, "semantic")
 
 
 @app.post("/search/hybrid")
 def search_hybrid(request: SearchRequest):
-    results = hybrid_search(
-        chunks=request.chunks,
-        query=request.query,
-        top_k=request.top_k,
-    )
-
-    return {
-        "method": "hybrid",
-        "query": request.query,
-        "result_count": len(results),
-        "results": results,
-    }
+    return run_search(request, "hybrid")
