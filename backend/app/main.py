@@ -1,3 +1,7 @@
+from backend.app.retrieval import bm25_search
+from backend.app.semantic_search import semantic_search
+from backend.app.hybrid_search import hybrid_search
+from backend.app.schemas import SearchRequest
 
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from pydantic import BaseModel
@@ -101,6 +105,54 @@ def search_chunks(request: SearchRequest):
     )
 
     return {
+        "query": request.query,
+        "result_count": len(results),
+        "results": results,
+    }
+
+
+@app.post("/search/bm25")
+def search_bm25(request: SearchRequest):
+    results = bm25_search(
+        chunks=request.chunks,
+        query=request.query,
+        top_k=request.top_k,
+    )
+
+    return {
+        "method": "bm25",
+        "query": request.query,
+        "result_count": len(results),
+        "results": results,
+    }
+
+
+@app.post("/search/semantic")
+def search_semantic(request: SearchRequest):
+    results = semantic_search(
+        chunks=request.chunks,
+        query=request.query,
+        top_k=request.top_k,
+    )
+
+    return {
+        "method": "semantic",
+        "query": request.query,
+        "result_count": len(results),
+        "results": results,
+    }
+
+
+@app.post("/search/hybrid")
+def search_hybrid(request: SearchRequest):
+    results = hybrid_search(
+        chunks=request.chunks,
+        query=request.query,
+        top_k=request.top_k,
+    )
+
+    return {
+        "method": "hybrid",
         "query": request.query,
         "result_count": len(results),
         "results": results,
