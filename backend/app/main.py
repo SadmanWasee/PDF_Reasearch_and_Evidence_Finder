@@ -1,7 +1,7 @@
 
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from pydantic import BaseModel
-
+from fastapi.middleware.cors import CORSMiddleware
 from backend.app.pdf_processor import extract_pdf_text
 from backend.app.chunker import chunk_pages
 from backend.app.document_store import save_document, get_document
@@ -14,6 +14,14 @@ app = FastAPI(
     title="PDF Research and Evidence Finder",
     description="Search research PDFs and retrieve relevant evidence.",
     version="1.0.0",
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:5173"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 MAX_FILE_SIZE = 10 * 1024 * 1024  # 10 MB
