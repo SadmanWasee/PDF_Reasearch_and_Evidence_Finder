@@ -1,30 +1,52 @@
-
 import { useState } from 'react'
+
+const API_BASE_URL = 'http://127.0.0.1:8000'
+
+const searchMethods = [
+  {
+    value: 'bm25',
+    label: 'BM25',
+    description: 'Keyword matching',
+  },
+  {
+    value: 'semantic',
+    label: 'Semantic',
+    description: 'Meaning-based search',
+  },
+  {
+    value: 'hybrid',
+    label: 'Hybrid',
+    description: 'Combines both methods',
+  },
+]
 
 function App() {
   const [file, setFile] = useState(null)
+  const [document, setDocument] = useState(null)
   const [query, setQuery] = useState('')
   const [method, setMethod] = useState('hybrid')
 
-  const [document, setDocument] = useState(null)
   const [uploading, setUploading] = useState(false)
+  const [searching, setSearching] = useState(false)
+
   const [uploadError, setUploadError] = useState('')
+  const [searchError, setSearchError] = useState('')
+  const [searchResults, setSearchResults] = useState(null)
 
   function handleFileChange(event) {
     const selectedFile = event.target.files?.[0] ?? null
 
     setFile(selectedFile)
     setDocument(null)
+    setSearchResults(null)
     setUploadError('')
+    setSearchError('')
 
     if (!selectedFile) return
 
-    if (
-      !selectedFile.name.toLowerCase().endsWith('.pdf') ||
-      selectedFile.type === 'application/x-msdownload'
-    ) {
+    if (!selectedFile.name.toLowerCase().endsWith('.pdf')) {
       setFile(null)
-      setUploadError('Please select a valid PDF file.')
+      setUploadError('Please select a PDF file.')
       return
     }
 
@@ -42,26 +64,22 @@ function App() {
 
     setUploading(true)
     setUploadError('')
-    setDocument(null)
+    setSearchError('')
+    setSearchResults(null)
 
     try {
       const formData = new FormData()
       formData.append('file', file)
 
-      const response = await fetch(
-        'http://127.0.0.1:8000/upload',
-        {
-          method: 'POST',
-          body: formData,
-        },
-      )
+      const response = await fetch(`${API_BASE_URL}/upload`, {
+        method: 'POST',
+        body: formData,
+      })
 
       const data = await response.json()
 
       if (!response.ok) {
-        throw new Error(
-          data.detail || 'The PDF upload failed.',
-        )
+        throw new Error(data.detail || 'The PDF upload failed.')
       }
 
       setDocument(data)
@@ -75,9 +93,71 @@ function App() {
     }
   }
 
+  async function handleSearch() {
+    if (!document) {
+      setSearchError('Please upload a PDF before searching.')
+      return
+    }
+
+    if (!query.trim()) {
+      setSearchError('Please enter a research question.')
+      return
+    }
+
+    setSearching(true)
+    setSearchError('')
+    setSearchResults(null)
+
+    try {
+      const response = await fetch(
+        `${API_BASE_URL}/search/${method}`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            document_id: document.document_id,
+            query: query.trim(),
+            top_k: 5,
+          }),
+        },
+      )
+
+      const data = await response.json()
+
+      if (!response.ok) {
+        throw new Error(data.detail || 'Search failed.')
+      }
+
+      setSearchResults(data)
+    } catch (error) {
+      setSearchError(
+        error.message ||
+          'Could not complete the search. Check whether the backend is running.',
+      )
+    } finally {
+      setSearching(false)
+    }
+  }
+
+  function getResultScore(result) {
+    if (method === 'hybrid') {
+      return result.rrf_score
+    }
+
+    return result.score
+  }
+
+  function getScoreLabel() {
+    if (method === 'hybrid') return 'RRF score'
+    if (method === 'semantic') return 'Similarity score'
+
+    return 'BM25 score'
+  }
+
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900">
-      {/* Navigation */}
       <header className="border-b border-slate-200 bg-white">
         <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
           <div>
@@ -96,7 +176,6 @@ function App() {
       </header>
 
       <main className="mx-auto max-w-4xl px-6 py-12">
-        {/* Hero */}
         <div className="mb-10 text-center">
           <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-indigo-100 bg-indigo-50 px-3 py-1 text-sm font-medium text-indigo-700">
             <span>✦</span>
@@ -108,14 +187,13 @@ function App() {
           </h2>
 
           <p className="mx-auto mt-3 max-w-2xl text-slate-600">
-            Upload a research paper and discover relevant
-            passages using keyword and semantic retrieval.
+            Upload a research paper and discover relevant passages
+            using keyword and semantic retrieval.
           </p>
         </div>
 
-        {/* Main form */}
         <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
-          {/* PDF upload */}
+          {/* Step 1: Upload a PDF */}
           <div>
             <div className="flex items-center gap-3">
               <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-indigo-50 font-semibold text-indigo-700">
@@ -179,7 +257,7 @@ function App() {
                   PDF uploaded successfully!
                 </p>
 
-                <p className="mt-1 wrap-break-word text-sm text-emerald-700">
+                <p className="mt-1 break-words text-sm text-emerald-700">
                   {document.filename}
                 </p>
 
@@ -198,7 +276,7 @@ function App() {
 
           <div className="my-8 border-t border-slate-100" />
 
-          {/* Research question */}
+          {/* Step 2: Enter a question */}
           <div>
             <div className="flex items-center gap-3">
               <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-indigo-50 font-semibold text-indigo-700">
@@ -221,7 +299,7 @@ function App() {
 
           <div className="my-8 border-t border-slate-100" />
 
-          {/* Search method */}
+          {/* Step 3: Choose a retrieval method */}
           <div>
             <div className="flex items-center gap-3">
               <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-indigo-50 font-semibold text-indigo-700">
@@ -234,27 +312,15 @@ function App() {
             </div>
 
             <div className="mt-4 grid gap-3 sm:grid-cols-3">
-              {[
-                {
-                  value: 'bm25',
-                  label: 'BM25',
-                  description: 'Keyword matching',
-                },
-                {
-                  value: 'semantic',
-                  label: 'Semantic',
-                  description: 'Meaning-based search',
-                },
-                {
-                  value: 'hybrid',
-                  label: 'Hybrid',
-                  description: 'Combines both methods',
-                },
-              ].map((option) => (
+              {searchMethods.map((option) => (
                 <button
                   key={option.value}
                   type="button"
-                  onClick={() => setMethod(option.value)}
+                  onClick={() => {
+                    setMethod(option.value)
+                    setSearchResults(null)
+                    setSearchError('')
+                  }}
                   aria-pressed={method === option.value}
                   className={`rounded-xl border p-4 text-left transition ${
                     method === option.value
@@ -274,18 +340,13 @@ function App() {
             </div>
           </div>
 
-          {/* Search button: wired up in the next step */}
           <button
             type="button"
-            disabled={!document || !query.trim()}
-            onClick={() =>
-              alert(
-                'PDF upload is ready! Next, we will connect the search API.',
-              )
-            }
+            disabled={!document || !query.trim() || searching}
+            onClick={handleSearch}
             className="mt-8 w-full rounded-xl bg-indigo-600 px-5 py-3 font-semibold text-white transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-slate-300"
           >
-            Search research paper
+            {searching ? 'Searching research paper...' : 'Search research paper'}
           </button>
 
           {!document && (
@@ -293,13 +354,86 @@ function App() {
               Upload your PDF before searching its contents.
             </p>
           )}
+
+          {searchError && (
+            <div
+              role="alert"
+              className="mt-4 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700"
+            >
+              {searchError}
+            </div>
+          )}
         </section>
 
-        {/* Footer */}
+        {/* Step 4: Display the search results */}
+        {searchResults && (
+          <section className="mt-8">
+            <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
+              <div>
+                <h3 className="text-xl font-bold">
+                  Search results
+                </h3>
+
+                <p className="mt-1 text-sm text-slate-500">
+                  {searchResults.result_count} passages found using{' '}
+                  {searchResults.method.toUpperCase()} search.
+                </p>
+              </div>
+
+              <span className="rounded-full bg-indigo-50 px-3 py-1 text-sm font-medium text-indigo-700">
+                Top {searchResults.results.length} passages
+              </span>
+            </div>
+
+            {searchResults.results.length === 0 ? (
+              <div className="rounded-xl border border-slate-200 bg-white p-6 text-center text-slate-600">
+                No matching passages were found. Try another question.
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {searchResults.results.map((result, index) => {
+                  const score = getResultScore(result)
+
+                  return (
+                    <article
+                      key={`${result.page_number}-${result.chunk_id}-${index}`}
+                      className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"
+                    >
+                      <div className="flex flex-wrap items-center justify-between gap-3">
+                        <div className="flex items-center gap-2">
+                          <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-50 text-sm font-bold text-indigo-700">
+                            {index + 1}
+                          </span>
+
+                          <span className="text-sm font-semibold text-slate-800">
+                            Page {result.page_number}
+                          </span>
+
+                          <span className="text-sm text-slate-400">
+                            · Chunk {result.chunk_id}
+                          </span>
+                        </div>
+
+                        {typeof score === 'number' && (
+                          <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-600">
+                            {getScoreLabel()}: {score.toFixed(4)}
+                          </span>
+                        )}
+                      </div>
+
+                      <p className="mt-4 whitespace-pre-wrap text-sm leading-7 text-slate-700">
+                        {result.text}
+                      </p>
+                    </article>
+                  )
+                })}
+              </div>
+            )}
+          </section>
+        )}
+
         <footer className="mt-8 text-center text-sm text-slate-500">
-          <p>
-            Evidence Finder · AI-powered research assistance
-          </p>
+          <p>Evidence Finder · AI-powered research assistance</p>
           <p className="mt-1">
             Find relevant passages and trace them to their source pages.
           </p>
