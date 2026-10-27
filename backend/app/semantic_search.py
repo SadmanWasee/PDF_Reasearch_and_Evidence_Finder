@@ -1,11 +1,11 @@
 
-from sentence_transformers import SentenceTransformer
+import numpy as np
+from fastembed import TextEmbedding
 from sklearn.metrics.pairwise import cosine_similarity
 
-
-# Load the model once when this module is imported
+# Load the lightweight ONNX embedding model once.
 MODEL_NAME = "sentence-transformers/all-MiniLM-L6-v2"
-model = SentenceTransformer(MODEL_NAME)
+model = TextEmbedding(model_name=MODEL_NAME)
 
 
 def semantic_search(
@@ -18,28 +18,20 @@ def semantic_search(
     if not query.strip() or not chunks or top_k <= 0:
         return []
 
-    # Convert every chunk into a numerical embedding
+    # Generate embeddings for the PDF chunks.
     texts = [chunk["text"] for chunk in chunks]
-    chunk_embeddings = model.encode(
-        texts,
-        convert_to_numpy=True,
-        normalize_embeddings=True,
-    )
+    chunk_embeddings = np.array(list(model.embed(texts)))
 
-    # Convert the user's query into an embedding
-    query_embedding = model.encode(
-        [query],
-        convert_to_numpy=True,
-        normalize_embeddings=True,
-    )
+    # Generate an embedding for the search query.
+    query_embedding = np.array(list(model.query_embed(query)))
 
-    # Compare the query embedding with every chunk embedding
+    # Compare the query with every chunk.
     scores = cosine_similarity(
         query_embedding,
         chunk_embeddings,
     )[0]
 
-    # Rank chunks from most to least similar
+    # Return the most similar chunks first.
     ranked_indices = scores.argsort()[::-1][:top_k]
 
     results = []

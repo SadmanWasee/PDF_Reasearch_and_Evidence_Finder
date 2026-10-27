@@ -2,6 +2,7 @@
 uvicorn[standard]
 python-multipart
 pymupdf
-sentence-transformers
+fastembed
+numpy
 scikit-learn
 rank-bm25
