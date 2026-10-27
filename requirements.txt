@@ -1,0 +1,7 @@
+﻿fastapi
+uvicorn[standard]
+python-multipart
+pymupdf
+sentence-transformers
+scikit-learn
+rank-bm25
