@@ -2,13 +2,18 @@
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
+
 from backend.app.pdf_processor import extract_pdf_text
 from backend.app.chunker import chunk_pages
 from backend.app.document_store import save_document, get_document
 from backend.app.retrieval import bm25_search
-from backend.app.semantic_search import semantic_search
+from backend.app.semantic_search import (
+    generate_embeddings,
+    semantic_search,
+)
 from backend.app.hybrid_search import hybrid_search
 from backend.app.schemas import SearchRequest
+
 
 app = FastAPI(
     title="PDF Research and Evidence Finder",
@@ -19,15 +24,15 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
-    "http://localhost:5173",
-    "https://pdfreasearchfinder.vercel.app",
+        "http://localhost:5173",
+        "https://pdfreasearchfinder.vercel.app",
     ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-MAX_FILE_SIZE = 10 * 1024 * 1024  # 10 MB
+MAX_FILE_SIZE = 10 * 1024 * 1024
 
 
 class PageText(BaseModel):
@@ -52,9 +57,7 @@ class PDFUploadResponse(BaseModel):
 
 @app.get("/")
 def home():
-    return {
-        "message": "PDF Research and Evidence Finder API is running!"
-    }
+    return {"message": "PDF Research and Evidence Finder API is running!"}
 
 
 @app.get("/health")
@@ -94,10 +97,31 @@ async def upload_pdf(file: UploadFile = File(...)):
 
     chunks = chunk_pages(pages)
 
+    if not chunks:
+        raise HTTPException(
+            status_code=422,
+            detail="No searchable text chunks could be created.",
+        )
+
+    # Generate document embeddings once during upload.
+    # Batch processing helps limit temporary inference memory.
+    try:
+        embeddings = generate_embeddings(chunks)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "Could not generate document embeddings. "
+                "The server may be low on memory. Please try again."
+            ),
+        ) from exc
+
+    # Store the chunks and their embeddings for later searches.
     document_id = save_document(
         filename=file.filename,
         pages=pages,
         chunks=chunks,
+        embeddings=embeddings,
     )
 
     return {
@@ -120,15 +144,31 @@ def run_search(request: SearchRequest, method: str):
         )
 
     chunks = document["chunks"]
+    embeddings = document.get("embeddings")
 
     if method == "bm25":
-        results = bm25_search(chunks, request.query, request.top_k)
-    elif method == "semantic":
-        results = semantic_search(chunks, request.query, request.top_k)
-    else:
-        results = hybrid_search(chunks, request.query, request.top_k)
+        results = bm25_search(
+            chunks,
+            request.query,
+            request.top_k,
+        )
 
-    # Remove the BM25 score from hybrid results; RRF is the fused score.
+    elif method == "semantic":
+        results = semantic_search(
+            chunks,
+            request.query,
+            request.top_k,
+            chunk_embeddings=embeddings,
+        )
+
+    else:
+        results = hybrid_search(
+            chunks,
+            request.query,
+            request.top_k,
+            chunk_embeddings=embeddings,
+        )
+
     if method == "hybrid":
         for result in results:
             result.pop("score", None)

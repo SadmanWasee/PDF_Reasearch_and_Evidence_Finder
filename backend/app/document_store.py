@@ -1,8 +1,9 @@
-
 from uuid import uuid4
 
+import numpy as np
 
-# Stores uploaded documents until the server restarts
+
+# Stores uploaded documents until the server restarts.
 documents: dict[str, dict] = {}
 
 
@@ -10,8 +11,9 @@ def save_document(
     filename: str,
     pages: list[dict],
     chunks: list[dict],
+    embeddings: np.ndarray | None = None,
 ) -> str:
-    """Store an uploaded document and return its unique ID."""
+    """Store a document, its chunks, and its embeddings."""
 
     document_id = str(uuid4())
 
@@ -19,6 +21,7 @@ def save_document(
         "filename": filename,
         "pages": pages,
         "chunks": chunks,
+        "embeddings": embeddings,
     }
 
     return document_id
