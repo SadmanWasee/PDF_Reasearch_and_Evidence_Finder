@@ -86,7 +86,7 @@ function App() {
     } catch (error) {
       setUploadError(
         error.message ||
-          'Could not connect to the backend. Make sure FastAPI is running.',
+        'Could not connect to the backend. Make sure FastAPI is running.',
       )
     } finally {
       setUploading(false)
@@ -134,7 +134,7 @@ function App() {
     } catch (error) {
       setSearchError(
         error.message ||
-          'Could not complete the search. Check whether the backend is running.',
+        'Could not complete the search. Check whether the backend is running.',
       )
     } finally {
       setSearching(false)
@@ -229,7 +229,13 @@ function App() {
                 disabled={uploading}
               />
             </label>
-
+            <div className="mt-4 flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+              <span className="mt-0.5" aria-hidden="true">ⓘ</span>
+              <p>
+                <span className="font-semibold">Processing may take a few minutes.</span>{' '}
+                Text extraction, chunking, and embedding generation happen before search is ready.
+              </p>
+            </div>
             <button
               type="button"
               onClick={handleUpload}
@@ -322,11 +328,10 @@ function App() {
                     setSearchError('')
                   }}
                   aria-pressed={method === option.value}
-                  className={`rounded-xl border p-4 text-left transition ${
-                    method === option.value
+                  className={`rounded-xl border p-4 text-left transition ${method === option.value
                       ? 'border-indigo-500 bg-indigo-50 ring-2 ring-indigo-100'
                       : 'border-slate-200 hover:border-slate-400'
-                  }`}
+                    }`}
                 >
                   <span className="block font-semibold">
                     {option.label}
